@@ -1,0 +1,1 @@
+from .lightonocr_backend import LightOnOCRBackend

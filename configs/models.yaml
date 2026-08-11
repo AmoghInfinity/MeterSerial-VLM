@@ -1,0 +1,13 @@
+models:
+
+  qwen2_vl:
+    repo_id: "Qwen/Qwen2-VL-2B-Instruct"
+    local_dir: "model_store/qwen2_vl"
+
+  internvl:
+    repo_id: "OpenGVLab/InternVL2_5-4B"
+    local_dir: "model_store/internvl"
+
+  lightonocr:
+    repo_id: "lightonai/LightOnOCR-2-1B"
+    local_dir: "model_store/lightonocr"
