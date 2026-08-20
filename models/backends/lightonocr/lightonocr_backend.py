@@ -140,36 +140,143 @@ class LightOnOCRBackend(BaseMeterModel):
 
     def _build_prompt(self) -> str:
         """
-        Build the meter serial-number OCR instruction.
+        Build a meter-specific OCR instruction.
         """
 
         return """
-Read the electricity meter identification information in this image.
+    Read the text visible on this electricity smart meter.
 
-Find the actual meter serial number.
+    This is a digital electricity meter. Your primary task is to accurately
+    read the meter identification information printed on the meter body,
+    especially the identification label or specification plate.
 
-Look for labels such as:
-Serial Number, Serial No, S/N, SL NO, Meter Number,
-Meter No, or Meter ID.
+    PRIORITY 1 — METER SERIAL NUMBER
 
-Return the value associated with the label.
+    Look carefully for the meter's serial number and its associated label.
 
-Do not return:
-- the label itself
-- IMEI numbers unless clearly identified as the meter serial number
-- meter readings
-- voltage
-- current
-- frequency
-- dates
-- model numbers
+    Common labels include:
+    - Serial Number
+    - Serial No
+    - Serial No.
+    - S/N
+    - S. No.
+    - S No
+    - SL NO
+    - SL. NO
+    - SL NO.
+    - Meter Number
+    - Meter No
+    - Meter No.
+    - Meter ID
+    - Device ID
+    - Device No
 
-If no meter serial number is visible, return:
+    The value immediately associated with these labels is the meter serial
+    number.
 
-NOT_FOUND
+    PRIORITY 2 — IMEI NUMBER
 
-Return only the identifier value or NOT_FOUND.
-""".strip()
+    Look for the cellular communication IMEI printed on the meter.
+
+    Common labels include:
+    - IMEI
+    - IMEI NO
+    - IMEI NO.
+    - IMEI Number
+    - IMEI NUMBER
+
+    The value associated with the IMEI label is the IMEI number.
+
+    PRIORITY 3 — METER DATES
+
+    Look for dates printed on the meter identification/specification plate.
+
+    Pay attention to:
+    - MFG
+    - MFG.
+    - Manufactured
+    - Manufacturing Date
+    - Manufacture Date
+    - Dated
+    - Date
+    - Installation Date
+    - Installed
+    - Commissioning Date
+    - Commissioned
+
+    Read the date exactly as printed.
+
+    IMPORTANT VISUAL INSTRUCTIONS
+
+    The serial number and IMEI may be printed in small text on the meter
+    identification plate.
+
+    Carefully inspect:
+    - identification plates
+    - specification labels
+    - printed text near "SL NO" or "S/N"
+    - printed text near "IMEI"
+    - text near manufacturer information
+    - small text containing letters and numbers
+
+    Prioritize identification information over the large digital meter
+    display.
+
+    CHARACTER ACCURACY
+
+    Read every visible character exactly as it appears.
+
+    Pay special attention to characters that are easily confused:
+    - O and 0
+    - I and 1
+    - S and 5
+    - B and 8
+    - G and 6
+    - Z and 2
+
+    Do not automatically correct or guess an unclear character.
+
+    Do not invent missing characters.
+
+    IMPORTANT — DO NOT CONFUSE THESE VALUES
+
+    Do NOT treat the following as the meter serial number unless they are
+    explicitly associated with a serial-number label:
+
+    - IMEI numbers
+    - meter readings
+    - electricity consumption values
+    - voltage
+    - current
+    - frequency
+    - latitude
+    - longitude
+    - dates
+    - manufacturing numbers
+    - model numbers
+    - part numbers
+    - firmware numbers
+    - QR codes
+    - barcode numbers
+    - manufacturer names
+    - product names
+
+    Likewise, do not treat the serial number as an IMEI unless it is
+    explicitly associated with an IMEI label.
+
+    OUTPUT
+
+    Transcribe the relevant visible meter identification text.
+
+    If the identification information is visible, return the text exactly
+    as it appears on the meter.
+
+    If no relevant identification information is visible, return:
+
+    NOT_FOUND
+
+    Do not invent information.
+    """.strip()
 
     def _run_single_image(
         self,
