@@ -2,237 +2,262 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from typing import Any
 
 
 class LightOnOCRConsolidator:
     """
-    Consolidate structured results produced independently
-    from LightOnOCR image regions.
+    Consolidate serial number, IMEI and date information
+    obtained from multiple LightOnOCR regions/scales.
     """
 
-    REGION_PRIORITY = (
-        "tile_4",
-        "tile_5",
-        "tile_1",
-        "tile_2",
-        "full_image",
-        "tile_3",
-        "tile_6",
+    DATE_CATEGORIES = (
+        "manufacturing",
+        "dated",
+        "installation",
+        "commissioning",
     )
+
+    def __init__(self) -> None:
+        pass
 
     def consolidate(
         self,
-        region_results: dict[str, dict[str, Any]],
+        extracted_results: dict[
+            str,
+            dict[str, Any],
+        ],
     ) -> dict[str, Any]:
         """
-        Consolidate serial number, IMEI and dates.
+        Consolidate all extracted OCR results.
         """
 
-        return {
-            "serial_number": self._consolidate_serial_number(
-                region_results
-            ),
-            "imei": self._consolidate_imei(
-                region_results
-            ),
-            "dates": self._consolidate_dates(
-                region_results
-            ),
+        serial_candidates: list[str] = []
+        imei_candidates: list[str] = []
+
+        date_candidates: dict[
+            str,
+            list[str],
+        ] = {
+            category: []
+            for category in self.DATE_CATEGORIES
         }
 
-    def _consolidate_serial_number(
-        self,
-        region_results: dict[str, dict[str, Any]],
-    ) -> str:
-        """
-        Select the strongest serial-number candidate.
-        """
+        for result in extracted_results.values():
 
-        candidates: list[tuple[str, str]] = []
+            serial_number = str(
+                result.get(
+                    "serial_number",
+                    "",
+                )
+                or ""
+            ).strip()
 
-        for region_name, result in region_results.items():
-
-            value = result.get(
-                "serial_number",
-                "",
-            )
-
-            if not value:
-                continue
-
-            normalized = self._normalize_serial(
-                value
-            )
-
-            if normalized:
-                candidates.append(
-                    (
-                        region_name,
-                        normalized,
-                    )
+            if serial_number:
+                serial_candidates.append(
+                    serial_number
                 )
 
-        return self._select_best_candidate(
-            candidates
-        )
-
-    def _consolidate_imei(
-        self,
-        region_results: dict[str, dict[str, Any]],
-    ) -> str:
-        """
-        Select the strongest IMEI candidate.
-        """
-
-        candidates: list[tuple[str, str]] = []
-
-        for region_name, result in region_results.items():
-
-            value = result.get(
-                "imei",
-                "",
-            )
-
-            if not value:
-                continue
-
-            normalized = self._normalize_imei(
-                value
-            )
-
-            if normalized:
-                candidates.append(
-                    (
-                        region_name,
-                        normalized,
-                    )
+            imei = str(
+                result.get(
+                    "imei",
+                    "",
                 )
+                or ""
+            ).strip()
 
-        return self._select_best_candidate(
-            candidates
-        )
-
-    def _select_best_candidate(
-        self,
-        candidates: list[tuple[str, str]],
-    ) -> str:
-        """
-        Select a candidate using frequency first
-        and region priority as the tie-breaker.
-        """
-
-        if not candidates:
-            return ""
-
-        counts = Counter(
-            value
-            for _, value in candidates
-        )
-
-        max_count = max(
-            counts.values()
-        )
-
-        best_candidates = {
-            value
-            for value, count in counts.items()
-            if count == max_count
-        }
-
-        for region_name in self.REGION_PRIORITY:
-
-            for candidate_region, value in candidates:
-
-                if (
-                    candidate_region == region_name
-                    and value in best_candidates
-                ):
-                    return value
-
-        return candidates[0][1]
-
-    def _consolidate_dates(
-        self,
-        region_results: dict[str, dict[str, Any]],
-    ) -> dict[str, list[str]]:
-        """
-        Merge and deduplicate dates across regions.
-        """
-
-        consolidated: dict[str, list[str]] = {}
-
-        for result in region_results.values():
+            if imei:
+                imei_candidates.append(
+                    imei
+                )
 
             dates = result.get(
                 "dates",
                 {},
             )
 
-            for category, values in dates.items():
+            if not isinstance(
+                dates,
+                dict,
+            ):
+                continue
 
-                if not values:
-                    continue
+            for category in self.DATE_CATEGORIES:
 
-                consolidated.setdefault(
+                values = dates.get(
                     category,
                     [],
                 )
 
+                if isinstance(
+                    values,
+                    str,
+                ):
+                    values = [values]
+
                 for value in values:
 
-                    normalized = self._normalize_date(
+                    value = str(
+                        value
+                    ).strip()
+
+                    if value:
+                        date_candidates[
+                            category
+                        ].append(
+                            value
+                        )
+
+        serial_number = self._select_identifier(
+            serial_candidates,
+            identifier_type="serial",
+        )
+
+        imei = self._select_identifier(
+            imei_candidates,
+            identifier_type="imei",
+        )
+
+        dates = self._consolidate_dates(
+            date_candidates
+        )
+
+        return {
+            "serial_number": serial_number,
+            "imei": imei,
+            "dates": dates,
+        }
+
+    # ------------------------------------------------------------------
+    # Identifier consolidation
+    # ------------------------------------------------------------------
+
+    def _select_identifier(
+        self,
+        candidates: list[str],
+        identifier_type: str,
+    ) -> str:
+        """
+        Select the strongest identifier candidate.
+        """
+
+        if not candidates:
+            return ""
+
+        cleaned: list[str] = []
+
+        for candidate in candidates:
+
+            value = candidate.strip()
+
+            if not value:
+                continue
+
+            if identifier_type == "imei":
+
+                value = re.sub(
+                    r"\D",
+                    "",
+                    value,
+                )
+
+                if len(value) not in {
+                    14,
+                    15,
+                    16,
+                }:
+                    continue
+
+            else:
+
+                value = re.sub(
+                    r"[^A-Za-z0-9./_-]",
+                    "",
+                    value,
+                )
+
+                if len(value) < 4:
+                    continue
+
+            cleaned.append(
+                value
+            )
+
+        if not cleaned:
+            return ""
+
+        counts = Counter(
+            cleaned
+        )
+
+        # --------------------------------------------------------------
+        # Strongest rule:
+        # repeated agreement across OCR regions.
+        # --------------------------------------------------------------
+
+        ranked = sorted(
+            counts.items(),
+            key=lambda item: (
+                item[1],
+                len(item[0]),
+            ),
+            reverse=True,
+        )
+
+        return ranked[0][0]
+
+    # ------------------------------------------------------------------
+    # Date consolidation
+    # ------------------------------------------------------------------
+
+    def _consolidate_dates(
+        self,
+        candidates: dict[
+            str,
+            list[str],
+        ],
+    ) -> dict[
+        str,
+        list[str],
+    ]:
+        """
+        Remove duplicate dates while preserving
+        their semantic category.
+        """
+
+        result: dict[
+            str,
+            list[str],
+        ] = {}
+
+        for category in self.DATE_CATEGORIES:
+
+            values = candidates.get(
+                category,
+                [],
+            )
+
+            unique_values: list[str] = []
+
+            for value in values:
+
+                value = value.strip()
+
+                if not value:
+                    continue
+
+                if value not in unique_values:
+
+                    unique_values.append(
                         value
                     )
 
-                    if (
-                        normalized
-                        and normalized
-                        not in consolidated[category]
-                    ):
-                        consolidated[
-                            category
-                        ].append(
-                            normalized
-                        )
+            if unique_values:
 
-        return consolidated
+                result[
+                    category
+                ] = unique_values
 
-    def _normalize_serial(
-        self,
-        value: str,
-    ) -> str:
-        """
-        Normalize a serial number.
-        """
-
-        return "".join(
-            value.upper().split()
-        ).strip(
-            ".,:;()[]{}<>\"'`"
-        )
-
-    def _normalize_imei(
-        self,
-        value: str,
-    ) -> str:
-        """
-        Normalize an IMEI.
-        """
-
-        return "".join(
-            value.split()
-        )
-
-    def _normalize_date(
-        self,
-        value: str,
-    ) -> str:
-        """
-        Normalize a date.
-        """
-
-        return value.strip(
-            ".,:;()[]{}<>\"'`"
-        )
+        return result
