@@ -9,7 +9,7 @@ from paddleocr import PaddleOCR
 
 from models.base.base_model import BaseMeterModel
 from models.registry import ModelRegistry
-
+import math
 import numpy as np
 
 class PaddleOCRBackend(BaseMeterModel):
@@ -36,7 +36,7 @@ class PaddleOCRBackend(BaseMeterModel):
         # Same tiling configuration as LightOnOCR.
         self.tile_rows = 2
         self.tile_columns = 3
-        self.tile_overlap = 0.20
+        self.tile_overlap = 0.35
 
     def load(self, model_path: Path | None = None) -> None:
         """
@@ -48,7 +48,7 @@ class PaddleOCRBackend(BaseMeterModel):
 
         self.ocr = PaddleOCR(
             lang="en",
-            device="cpu",
+            device="gpu",
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
@@ -69,7 +69,17 @@ class PaddleOCRBackend(BaseMeterModel):
         image: Image.Image,
     ) -> list[Image.Image]:
         """
-        Create the same 6 overlapping tiles used by LightOnOCR.
+        Create overlapping padded tiles.
+
+        Strategy:
+            - 2 rows x 3 columns
+            - 35% overlap
+            - 10% padding around every tile
+            - Edge tiles are padded rather than clipped
+
+        The padding is synthetic image space. It does not recover
+        pixels outside the original image; overlap is responsible
+        for ensuring text near boundaries appears in another tile.
         """
 
         width, height = image.size
@@ -77,32 +87,59 @@ class PaddleOCRBackend(BaseMeterModel):
         rows = self.tile_rows
         columns = self.tile_columns
 
-        base_width = width / columns
-        base_height = height / rows
+        overlap = self.tile_overlap
 
-        step_x = base_width * (
-            1.0 - self.tile_overlap
+        # ---------------------------------------------------------
+        # Nominal tile dimensions.
+        # ---------------------------------------------------------
+
+        tile_width = math.ceil(
+            width / (
+                columns
+                - overlap * (columns - 1)
+            )
         )
 
-        step_y = base_height * (
-            1.0 - self.tile_overlap
+        tile_height = math.ceil(
+            height / (
+                rows
+            - overlap * (rows - 1)
+            )
         )
 
-        tile_width = min(
-            width,
-            int(
-                base_width
-                * (1.0 + self.tile_overlap)
-            ),
+        tile_height = math.ceil(
+            height / (
+                rows
+                - overlap * (rows - 1)
+            )
         )
 
-        tile_height = min(
-            height,
-            int(
-                base_height
-                * (1.0 + self.tile_overlap)
-            ),
+        # ---------------------------------------------------------
+        # Distance between tile origins.
+        # ---------------------------------------------------------
+
+        step_x = int(
+            tile_width * (1.0 - overlap)
         )
+
+        step_y = int(
+            tile_height * (1.0 - overlap)
+        )
+
+        # ---------------------------------------------------------
+        # Proportional padding.
+        # ---------------------------------------------------------
+
+        padding_x = max(
+            16,
+            int(tile_width * 0.10),
+        )
+
+        padding_y = max(
+            16,
+            int(tile_height * 0.10),
+        )
+    
 
         tiles: list[Image.Image] = []
 
@@ -110,35 +147,103 @@ class PaddleOCRBackend(BaseMeterModel):
 
             for column in range(columns):
 
-                x = int(column * step_x)
-                y = int(row * step_y)
+                # -------------------------------------------------
+                # Desired crop position.
+                # -------------------------------------------------
 
-                x = min(
-                    x,
-                    max(
+                x1 = column * step_x
+                y1 = row * step_y
+
+                x2 = x1 + tile_width
+                y2 = y1 + tile_height
+
+                # -------------------------------------------------
+                # Shift the final tile so that it reaches the
+                # image boundary instead of leaving uncovered
+                # space.
+                # -------------------------------------------------
+
+                if column == columns - 1:
+                    x2 = width
+                    x1 = max(
                         0,
-                        width - tile_width,
-                    ),
+                        x2 - tile_width,
+                    )
+
+                if row == rows - 1:
+                    y2 = height
+                    y1 = max(
+                        0,
+                        y2 - tile_height,
+                    )
+
+                # -------------------------------------------------
+                # Actual pixels available inside the image.
+                # -------------------------------------------------
+
+                crop_x1 = max(
+                    0,
+                    x1,
                 )
 
-                y = min(
-                    y,
-                    max(
-                        0,
-                        height - tile_height,
-                    ),
+                crop_y1 = max(
+                    0,
+                    y1,
                 )
 
-                tile = image.crop(
+                crop_x2 = min(
+                    width,
+                    x2,
+                )
+
+                crop_y2 = min(
+                    height,
+                    y2,
+                )
+
+                crop = image.crop(
                     (
-                        x,
-                        y,
-                        x + tile_width,
-                        y + tile_height,
+                        crop_x1,
+                        crop_y1,
+                        crop_x2,
+                        crop_y2,
                     )
                 )
 
-                tiles.append(tile)
+                # -------------------------------------------------
+                # Create padded canvas.
+                # -------------------------------------------------
+
+                padded_width = (
+                    crop.width
+                    + padding_x * 2
+                )
+
+                padded_height = (
+                    crop.height
+                    + padding_y * 2
+                )
+
+                padded = Image.new(
+                    "RGB",
+                    (
+                        padded_width,
+                        padded_height,
+                    ),
+                    "white",
+                )
+
+                padded.paste(
+                    crop,
+                    (
+                        padding_x,
+                        padding_y,
+                    ),
+                )
+
+                tiles.append(
+                    padded
+                )
 
         return tiles
 

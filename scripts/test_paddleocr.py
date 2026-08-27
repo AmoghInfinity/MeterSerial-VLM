@@ -8,12 +8,12 @@ from models.backends.paddleocr.paddleocr_backend import (
     PaddleOCRBackend,
 )
 
-from utils.lightonocr_extractor import (
-    LightOnOCRExtractor,
+from utils.ocr_extractor import (
+    UniversalOCRExtractor,
 )
 
-from utils.lightonocr_consolidator import (
-    LightOnOCRConsolidator,
+from utils.ocr_consolidator import (
+    UniversalOCRConsolidator,
 )
 
 
@@ -173,10 +173,10 @@ def main() -> None:
 
     backend = PaddleOCRBackend()
 
-    extractor = LightOnOCRExtractor()
+    extractor = UniversalOCRExtractor()
 
     consolidator = (
-        LightOnOCRConsolidator()
+        UniversalOCRConsolidator()
     )
 
     try:
