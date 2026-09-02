@@ -185,6 +185,17 @@ Install the dependencies:
 python -m pip install -r requirements.txt
 ```
 
+```powershell
+python -m pip install -U huggingface_hub
+pip install qwen-vl-utils
+
+hf download lightonai/LightOnOCR-2-1B --local-dir model_store/lightonocr
+
+hf download Qwen/Qwen2-VL-2B-Instruct --local-dir model_store/qwen2-vl-2b
+
+hf download OpenGVLab/InternVL2_5-4B --local-dir model_store/internvl2_5-4b
+```
+
 ## Model
 
 The LightOnOCR model used by the project is:
