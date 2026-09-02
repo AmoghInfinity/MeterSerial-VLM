@@ -80,3 +80,7 @@ dist/
 
 # Test artifacts
 .pytest_cache/
+
+#zip files
+*.rar
+*.zip
